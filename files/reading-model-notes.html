@@ -1,0 +1,43 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reading Model Notes</title><style>body{max-width:900px;margin:40px auto;padding:20px;background:#faf9f3;color:#203d35;font:16px/1.7 Arial}pre{white-space:pre-wrap;overflow-wrap:anywhere}a{color:#234f42}</style><a href="../index.html#documents">← Back to LexiLand</a><h1>Reading Model Notes</h1><a download href="reading-model-notes.txt">Download original TXT</a><pre>Our Eye-Tracking Module monitors how a child’s eyes move while performing reading and visual tasks. We analyse behaviours such as fixation duration, regressions, scanning patterns, and saccade behaviour to identify possible reading difficulties, confusion, or visual overload. These eye-movement results are then provided to the Adaptive Reading Engine, which can adjust the difficulty of the learning content according to the child’s behaviour.
+
+Since our system is designed for children, we optimize the Random Forest model to provide reliable difficulty classification without overfitting to the training data. We use relevant eye-tracking features, hyperparameter tuning, stratified splitting, and five-fold cross-validation. The final prediction classifies the child as Normal, Moderate, or High difficulty, and the Adaptive Reading Engine uses this result to provide an appropriate reading activity.
+
+
+Model Explanation
+
+The Eye-Tracking component uses a Random Forest classification model to identify the reading difficulty level of children based on their eye-movement patterns while reading.
+
+The webcam captures the child’s eye movements using MediaPipe, and the system extracts features such as fixation duration, regression count, saccade characteristics, and scanning patterns. These features are then provided to the Random Forest model.
+
+The Random Forest model consists of multiple decision trees, where each tree independently analyzes the extracted eye-movement features and produces a prediction. The final classification is determined by combining the predictions from all trees through majority voting.
+
+The model classifies the child’s reading performance into three levels:
+
+Normal → Moderate Difficulty → High Difficulty
+
+The predicted difficulty level is then passed to the Adaptive Reading Engine, which can adjust the reading material or activities according to the child’s needs.
+
+Simple flow
+
+Webcam
+↓
+MediaPipe Eye Tracking
+↓
+Eye-Movement Data
+↓
+Feature Extraction
+
+* Fixation duration
+* Regression count
+* Saccade features
+* Scanning features
+    ↓
+    Random Forest Classifier
+    ↓
+    Normal / Moderate / High Difficulty
+    ↓
+    Adaptive Reading Engine
+
+Why Random Forest?
+
+Random Forest is suitable for your component because it can handle multiple eye-movement features, capture non-linear relationships, and is relatively robust against overfitting compared with a single decision tree. It also provides feature importance, which can help identify which eye-movement characteristics contribute most to the prediction.</pre></html>

@@ -1,0 +1,204 @@
+Model Optimization Techniques in Pronunciation Modeling
+In your current LexiLand architecture (
+predict_pronunciation_support.py
+ & 
+training_summary.json
+), the prototype model achieves ~67.8% accuracy and ~0.59 macro F1 using 44 summary acoustic features fed into a standard Random Forest.
+
+To boost the pronunciation model's accuracy, clinical relevance, and inference speed, apply the following optimization techniques:
+
+A. Acoustic & Feature-Level Optimizations
+Child-Specific Acoustic Normalization (Vocal Tract Length Normalization - VTLN)
+
+Problem: Children have shorter vocal tracts and higher fundamental frequencies (
+F
+0
+≈
+250
+–
+400
+ Hz
+F 
+0
+​
+ ≈250–400 Hz vs. 
+100
+–
+200
+ Hz
+100–200 Hz in adults), causing spectral smearing in standard adult MFCC filterbanks.
+Optimization: Adjust Mel filterbank bounds in librosa.feature.mfcc:
+python
+
+
+mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13, fmin=100, fmax=8000)
+Extract pitch (
+F
+0
+F 
+0
+​
+ ) trajectory and pitch variability (librosa.yin or pyin) to capture monotone or dysfluent speech cadences typical in dyslexic struggle.
+Formant Dynamics (
+F
+1
+,
+F
+2
+,
+F
+3
+F 
+1
+​
+ ,F 
+2
+​
+ ,F 
+3
+​
+ ) & Vowel Space Area (VSA)
+
+Why: Children with phonological processing difficulties frequently substitute vowels (e.g., confusing /æ/ in cat with /ɛ/ in bed). Formant frequencies 
+F
+1
+F 
+1
+​
+  (tongue height) and 
+F
+2
+F 
+2
+​
+  (tongue advancement) directly detect vowel distortions that MFCC summaries alone can obscure.
+Temporal Dynamics (
+Δ
+Δ and 
+Δ
+Δ
+ΔΔ MFCCs)
+
+Rather than only taking mean and std of static MFCCs, compute first derivatives (velocity / delta) and second derivatives (acceleration / delta-delta):
+python
+
+
+mfcc_delta = librosa.feature.delta(mfcc)
+mfcc_delta2 = librosa.feature.delta(mfcc, order=2)
+These capture the transition dynamics between phonemes (critical for detecting consonant cluster hesitation like st-, spl-, tr-).
+Self-Supervised Pre-trained Speech Embeddings (Wav2Vec 2.0 / HuBERT / WavLM)
+
+Instead of handcrafted features only, extract 768-dimensional embeddings from a pre-trained model like facebook/wav2vec2-base or microsoft/wavlm-base-plus.
+Pre-trained acoustic representations encode phonemic structures learned from thousands of hours of speech and yield 
+10
+–
+15
+%
+10–15% higher macro F1 on pronunciation assessment tasks.
+B. Model Architecture & Multi-Task Learning
+Upgrade from Random Forest to Gradient Boosting (LightGBM / CatBoost)
+
+Audio features often exhibit asymmetric distributions and correlations. LightGBM and CatBoost:
+Better separate non-linear decision boundaries for subtle speech pauses.
+Provide native categorical handling and faster GPU/CPU training.
+Can be tuned with Bayesian optimization (optuna) on learning_rate, num_leaves, and reg_alpha.
+Multi-Task Joint Learning (Classification + Continuous Score)
+
+Instead of training pronunciation_score_regressor.joblib and pronunciation_support_classifier.joblib separately, train a shared backbone neural net or multi-output gradient booster: 
+L
+=
+α
+L
+classification
++
+(
+1
+−
+α
+)
+L
+regression
+L=αL 
+classification
+​
+ +(1−α)L 
+regression
+​
+ 
+The continuous regression task regularizes the classification head, eliminating boundary confusion between low_support and medium_support.
+Hybrid Multi-Modal Fusion (Acoustic + Textual Alignment)
+
+Feed both acoustic metrics and Whisper ASR alignment features:
+Levenshtein Distance / Character Error Rate (CER) between target word and transcription.
+Phoneme Error Rate (PER) from 
+phonemeComparison.service.js
+.
+Normalized Speech Latency (time elapsed before first utterance).
+C. Data-Centric Optimizations & Class Imbalance
+Audio SpecAugment & Pitch Perturbation
+
+Augment child speech samples during training to prevent overfitting:
+Time Masking & Frequency Masking (masking small blocks of spectrogram).
+Pitch Shifting (
+±
+1.5
+±1.5 semitones) and Time Stretching (
+0.9
+×
+0.9× to 
+1.1
+×
+1.1×).
+Additive Noise (adding low-level classroom background noise at 15–20 dB SNR).
+Cost-Sensitive Learning / Focal Loss for High Support
+
+Misclassifying a child who needs high_support as low_support has a higher educational cost than the reverse.
+Use class_weight="balanced_subsample" or a custom cost matrix that penalizes false negatives on high_support.
+Participant-Disjoint Validation (GroupKFold)
+
+Always group cross-validation splits by participant_code (as structured in 
+train_final_speech_support_model_colab.py
+).
+If audio clips from the same child appear in both training and test sets, the model learns the child's microphone and vocal timbre rather than generalizable pronunciation patterns, inflating perceived accuracy by 
+15
+–
+25
+%
+15–25%.
+D. Deployment & Latency Optimization (Node.js <-> Python Bridge)
+Export to ONNX Runtime (onnxruntime)
+
+Currently, Node.js calls 
+predict_pronunciation_support.py
+ via child_process.spawn(), incurring Python interpreter startup overhead (~400–800ms per request).
+Convert the trained model to ONNX:
+python
+
+
+import skl2onnx
+onnx_model = skl2onnx.to_onnx(model, X_train[:1].astype(np.float32))
+Run inference directly inside Node.js using onnxruntime-node with zero Python process spawn overhead (<5ms execution).
+Quantized Faster-Whisper Inference (INT8 via CTranslate2)
+
+If using Whisper for ASR alignment, run faster-whisper with compute_type="int8" or float16:
+python
+
+
+from faster_whisper import WhisperModel
+model = WhisperModel("base.en", device="cpu", compute_type="int8")
+This delivers a 
+4
+×
+4× speedup and reduces memory consumption by 
+70
+%
+70%, allowing real-time response on your web application.
+Probability Calibration (CalibratedClassifierCV)
+
+Uncalibrated tree ensembles produce overconfident probability distributions. Calibrate predictions using Isotonic Regression or Platt Scaling so that a predicted 
+85
+%
+85% confidence truly represents an 
+85
+%
+85% empirical probability.
